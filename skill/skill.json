@@ -1,0 +1,440 @@
+[
+  {
+    "physics": "DTI",
+    "condition": "Single-shell b1000 DTI with num_b1000 >= 15, bvec condition number <= 2.5, SNR about 30-55, and near-isotropic voxels <= 1.25 mm",
+    "model": [
+      "Spatial UNet/CNN with residual/group-norm encoding and channel+spatial attention is a strong default when preserving spatial detail is important.",
+      "Voxelwise MLP can also work when denoising is available and no thick-slice anisotropy is present; avoid very large/irregular MLP expansion unless needed."
+    ],
+    "data": [
+      "Use normalize_b0_mean as the default normalization.",
+      "Use MPPCA when signal has visible noise or clipping/skew, but avoid heavy added noise augmentation.",
+      "Axial slicewise sampling is often safer for spatial models; voxelwise sampling is viable for compact MLP regimes."
+    ],
+    "training": [
+      "AdamW with warmup_plateau is a stable default for spatial models.",
+      "Use moderate slicewise batches around 20-32 for spatial models; voxelwise MLPs can use much larger batches when memory allows.",
+      "Use early stopping with long patience rather than short reactive stopping."
+    ],
+    "loss": [
+      "Keep MSE dominant with only small MAE/Huber/Rician/SSIM auxiliaries.",
+      "Use light or zero TV; keep coordinate finite-difference and bending penalties off.",
+      "Manual shell weighting can help, but avoid extreme b0 dominance unless the baseline shell is clearly underfit."
+    ],
+    "boundary": [
+      "Does not cover sparse 6-direction or ill-conditioned bvec sets.",
+      "High SNR alone does not justify voxelwise modeling when slices are thick or angular sampling is poor."
+    ]
+  },
+  {
+    "physics": "DTI",
+    "condition": "Single-shell b1000 DTI with num_b1000 around 6 or bvec condition number >= 5, SNR >= 30",
+    "model": [
+      "Prefer models with spatial context or moderate voxelwise MLPs over coordinate/hash-grid implicit models.",
+      "For slicewise use, compact UNet/CNN/Swin-style attention can help stabilize poor angular conditioning."
+    ],
+    "data": [
+      "Use MPPCA denoising when available.",
+      "Use normalize_b0_mean unless b0 intensity clipping or median-stable high dynamic range suggests normalize_b0_median.",
+      "Keep augmentation absent or very light; avoid strong flips/rotations/noise when angular information is already sparse."
+    ],
+    "training": [
+      "Use AdamW with conservative gradient clipping and long schedules.",
+      "For attention or token models, reduce slicewise batch size early to avoid memory-driven failures."
+    ],
+    "loss": [
+      "Use manual shell weighting to prevent the single diffusion shell from being washed out.",
+      "Keep robust auxiliaries modest; do not replace MSE with heavily Huber/Rician-dominant losses.",
+      "Keep TV tiny or zero unless using slicewise attention, where only a very small TV buffer is useful."
+    ],
+    "boundary": [
+      "If num_b1000 >= 15 and condition number < 2.5, less robust/spatial compensation is needed.",
+      "Very high bvec condition numbers do not make coordinate smoothness penalties reliable."
+    ]
+  },
+  {
+    "physics": "DTI",
+    "condition": "Anisotropic spatial resolution with through-plane voxel size about 3.0 mm and in-plane voxel size <= 1.0 mm, single-shell b1000, SNR >= 100",
+    "model": [
+      "Favor axial slicewise spatial UNet/CNN with residual/group-norm blocks and attention over voxelwise MLP.",
+      "Avoid memory-heavy window/token attention unless batch size is reduced substantially."
+    ],
+    "data": [
+      "Use axial orientation to align slices with the thick-slice acquisition.",
+      "Use normalize_b0_mean.",
+      "Use no augmentation or only mild geometric augmentation; avoid added noise."
+    ],
+    "training": [
+      "Warmup_plateau with AdamW is more reliable than restart-style schedules.",
+      "Moderate slicewise batches around the 20s-40s are preferred."
+    ],
+    "loss": [
+      "Use MSE-dominant reconstruction with small Huber/SSIM and optional very light TV.",
+      "Rician terms are optional and should remain small."
+    ],
+    "boundary": [
+      "This does not imply spatial UNet is always better for isotropic 2.0-2.5 mm scans.",
+      "If only voxelwise processing is feasible, compensate with MPPCA and conservative losses."
+    ]
+  },
+  {
+    "physics": "DTI",
+    "condition": "Single-shell b1000 DTI with SNR <= 25, b0_WM_to_GM_ratio <= 0.70, and bvec condition number >= 6",
+    "model": [
+      "Use spatial/operator/window models or moderately sized voxelwise MLPs; avoid oversized MLPs and coordinate hash grids.",
+      "If using slicewise models, keep width moderate rather than scaling attention aggressively."
+    ],
+    "data": [
+      "MPPCA is strongly useful.",
+      "Consider normalize_b0_median when b0 distribution is clipped or highly skewed; otherwise normalize_b0_mean remains acceptable.",
+      "Use little to no augmentation; if augmentation is needed, prefer noise-only at very low probability."
+    ],
+    "training": [
+      "Use conservative AdamW settings and long schedules.",
+      "Avoid overly loose gradient clipping in low-SNR/ill-conditioned regimes."
+    ],
+    "loss": [
+      "Use manual shell weighting with moderate b0 emphasis or balanced b0/diffusion weights.",
+      "Use mixed MSE+Huber with small Rician; avoid heavy TV and coordinate penalties."
+    ],
+    "boundary": [
+      "When SNR is high and bvec condition number < 3, do not over-regularize based on this low-SNR rule.",
+      "Manual shell weighting should not become extreme enough to suppress diffusion residuals."
+    ]
+  },
+  {
+    "physics": "DKI",
+    "condition": "Multi-shell DKI with b1000 and b2000, num_b1000 >= 10, num_b2000 >= 20, shell bvec condition numbers < 2.2, near-isotropic voxels <= 1.25 mm, and SNR about 30-55",
+    "model": [
+      "Use high-capacity spatial/token models rather than coordinate/hash-grid implicit models.",
+      "Token Mamba is strong when signal scale is stable and memory supports patch/slicewise training; spatial CNN/UNet is safer when SNR is lower or signal is more heterogeneous.",
+      "Avoid VAE/KL variants by default."
+    ],
+    "data": [
+      "Use MPPCA denoising.",
+      "Use normalize_b0_mean as the first choice unless median normalization is specifically supported by clipping/skew statistics.",
+      "Use slicewise axial or coronal orientation according to memory and spatial shape; avoid coordinate representations."
+    ],
+    "training": [
+      "AdamW with warmup_plateau and long patience is a stable default.",
+      "Use reduced batches for token/window models; memory feasibility should override larger-batch preferences.",
+      "Use conservative gradient clipping for token models."
+    ],
+    "loss": [
+      "Use manual shell weighting with increasing emphasis on higher b-shells.",
+      "Use MSE plus meaningful Huber/MAE but keep SSIM tiny and TV light.",
+      "Use a nonzero DKI physics constraint, but avoid letting the constraint dominate optimization."
+    ],
+    "boundary": [
+      "Sparse 6-direction shells require stronger robustness and often different model capacity.",
+      "Coarse 2.5 mm scans may favor voxelwise MLP even with well-conditioned shells."
+    ]
+  },
+  {
+    "physics": "DKI",
+    "condition": "DKI with sparse shells: num_b1000 <= 6 and num_b2000 <= 6, shell bvec condition numbers >= 4.5, SNR about 30-55",
+    "model": [
+      "Prefer compact token/window-attention or spatial models with spatial context over coordinate models.",
+      "Do not scale token/window models aggressively; moderate width/depth is safer."
+    ],
+    "data": [
+      "Use MPPCA denoising.",
+      "Slicewise processing is generally safer than coordinate/hash-grid training.",
+      "Use only mild augmentation; avoid strong noise or rotations."
+    ],
+    "training": [
+      "Use AdamW with warmup_plateau, long warmup, and conservative clipping.",
+      "Reduce batch size proactively for attention/token families."
+    ],
+    "loss": [
+      "Use manual shell weighting, often with substantial high-shell emphasis.",
+      "Use mixed MSE/Huber/MAE with low Rician and very small SSIM.",
+      "Use light TV; avoid coordinate finite-difference regularization."
+    ],
+    "boundary": [
+      "If bvec condition numbers are < 2 and directions are >= 10/20, do not overemphasize sparse-shell compensation.",
+      "Very high high-shell weights can destabilize sparse high-b residuals."
+    ]
+  },
+  {
+    "physics": "DKI",
+    "condition": "Coarse DKI with voxel size about 2.5 mm isotropic, brain patch about 53x66x54, SNR around 35, and well-conditioned shells with num_b1000 >= 10, num_b2000 >= 20, condition numbers < 2.2",
+    "model": [
+      "Large but controlled voxelwise MLPs become competitive and may outperform slicewise models.",
+      "Avoid KAN or extremely wide/deep voxelwise variants unless memory and stability are proven."
+    ],
+    "data": [
+      "Use voxelwise data with MPPCA and normalize_b0_mean.",
+      "Use no augmentation."
+    ],
+    "training": [
+      "Use smaller voxelwise batches than maximum memory permits; moderate batches improve feasibility for high-capacity MLPs.",
+      "Cosine_warmup with long decay is a strong option for tuned voxelwise MLPs."
+    ],
+    "loss": [
+      "Use Huber-leaning mixed reconstruction with reduced pure MSE dominance.",
+      "Use lower b0 and higher high-b shell weights, but keep ratios moderate.",
+      "Use zero TV and no coordinate penalties."
+    ],
+    "boundary": [
+      "Sparse 6-direction coarse scans may favor token/slicewise models instead.",
+      "Near-isotropic high-resolution scans should not automatically use voxelwise MLPs."
+    ]
+  },
+  {
+    "physics": "DKI",
+    "condition": "Coarse DKI with voxel size about 2.5 mm isotropic, sparse shells with num_b1000 <= 6 and num_b2000 <= 6, condition numbers >= 5, and SNR around 35",
+    "model": [
+      "Moderate token Mamba models are useful; avoid very large Mamba/window variants.",
+      "Non-VAE token models are safer than VAE/KL variants."
+    ],
+    "data": [
+      "Use MPPCA denoising and normalize_b0_median when signal dynamic range is large.",
+      "Coronal or axial slicewise orientation can work; choose orientation that improves memory and slice coverage.",
+      "Use very light augmentation only."
+    ],
+    "training": [
+      "Use AdamW with warmup_plateau, small learning rate, and moderate gradient clipping.",
+      "Slicewise batches can be larger than high-resolution token settings but should still be kept within safe memory limits."
+    ],
+    "loss": [
+      "Use balanced manual shell weighting with only mild high-shell upweighting.",
+      "Use MSE-dominant reconstruction with moderate Huber and small Rician.",
+      "Use low-to-moderate TV, not zero-heavy coordinate regularization."
+    ],
+    "boundary": [
+      "If shells are well-conditioned and have many directions, voxelwise MLP may be more efficient.",
+      "Aggressive high-shell weighting is risky with only 6 directions per shell."
+    ]
+  },
+  {
+    "physics": "DKI",
+    "condition": "DKI signal with b0 mean < 500 and SNR about 30-35, multi-shell b1000/b2000, near-isotropic high-resolution voxels around 1.05 mm",
+    "model": [
+      "Spatial CNN/UNet with residual/group-norm attention is safer than large token models when signal scale is low and heterogeneous.",
+      "Avoid coordinate/hash-grid implicit models."
+    ],
+    "data": [
+      "Use MPPCA denoising.",
+      "Use normalize_b0_mean as default in low-intensity scans.",
+      "Coronal slicewise orientation can be useful for spatial CNNs."
+    ],
+    "training": [
+      "Use AdamW with warmup_plateau and moderate learning rates.",
+      "Use conservative gradient clipping and long patience."
+    ],
+    "loss": [
+      "Use manual shell weighting with high-shell emphasis.",
+      "Use balanced MSE/Huber/MAE/Rician and small TV.",
+      "DKI constraint weights may need to be larger than in high-SNR token settings."
+    ],
+    "boundary": [
+      "High signal-scale 3T scans with b0 mean in the thousands may favor token Mamba or voxelwise MLP.",
+      "Do not combine large constraint weights with very high TV or heavy robust losses."
+    ]
+  },
+  {
+    "physics": "NODDI",
+    "condition": "NODDI with 3 diffusion shells including b3000, num_b1000/b2000/b3000 >= 15 each, shell condition numbers < 2.0, SNR about 35-55",
+    "model": [
+      "Voxelwise MLP is a strong default; compact KAN voxelwise MLP can help on coarse 2.5 mm data.",
+      "Use slicewise token/spatial models only when voxelwise MLP underfits or memory is favorable."
+    ],
+    "data": [
+      "Use MPPCA denoising.",
+      "Use no augmentation for voxelwise training.",
+      "normalize_b0_median can help when high dynamic range or clipping is present; normalize_b0_mean is safer for KAN voxelwise settings with stable b0 scaling."
+    ],
+    "training": [
+      "Use long training schedules with AdamW and conservative clipping.",
+      "For KAN voxelwise models, use moderate batches in the thousands to low ten-thousands rather than extremely large voxelwise batches."
+    ],
+    "loss": [
+      "Use manual shell weighting that downweights b0, emphasizes b1000/b2000, and does not overemphasize b3000.",
+      "Use MSE plus strong Huber contribution with small MAE/Rician.",
+      "Use zero TV and no coordinate regularization for voxelwise models."
+    ],
+    "boundary": [
+      "Sparse 6-direction shells require different shell weighting and may favor token/window slicewise models.",
+      "Do not let b3000 dominate the loss even when it is present."
+    ]
+  },
+  {
+    "physics": "NODDI",
+    "condition": "NODDI with b1000 and b2000 only, well-conditioned shells with num_b1000 >= 10, num_b2000 >= 20, condition numbers < 2.2, SNR about 30-55",
+    "model": [
+      "Voxelwise MLP is generally preferred over slicewise spatial or coordinate/hash-grid models.",
+      "Moderate-width MLPs are safer than very large/deep MLPs."
+    ],
+    "data": [
+      "Use MPPCA denoising.",
+      "normalize_b0_mean is a strong default for voxelwise fitting.",
+      "Use no augmentation."
+    ],
+    "training": [
+      "Use AdamW with long schedules and either cosine_warmup or warmup_plateau depending on stability.",
+      "Use large voxelwise batches when using plain MLPs, but avoid pushing to memory limits."
+    ],
+    "loss": [
+      "Use MSE-dominant or MSE/Huber-balanced reconstruction with modest MAE/Rician.",
+      "Use manual shell weighting with low b0 weight and moderate b1000/b2000 emphasis.",
+      "Use zero TV and no coordinate penalties."
+    ],
+    "boundary": [
+      "Coarse scans with attention models may benefit from tiny TV, but this does not transfer to voxelwise MLP.",
+      "If bvec condition numbers rise above 5 with only 6 directions per shell, use sparse-shell guidance instead."
+    ]
+  },
+  {
+    "physics": "NODDI",
+    "condition": "NODDI with sparse b1000/b2000 shells, num_b1000 <= 6 and num_b2000 <= 6, shell condition numbers >= 4.5, SNR about 30-55",
+    "model": [
+      "Voxelwise MLP remains reliable; compact KAN MLP can help for coarse 2.5 mm data.",
+      "For slicewise alternatives, token Mamba or compact window attention is preferable to heavy spatial CNNs or coordinate grids."
+    ],
+    "data": [
+      "Use MPPCA denoising.",
+      "Use no augmentation for voxelwise models; for slicewise models, keep augmentation absent or extremely light.",
+      "normalize_b0_mean works well for low-intensity or KAN voxelwise regimes; normalize_b0_median can help in high dynamic-range slicewise/token regimes."
+    ],
+    "training": [
+      "Use conservative AdamW and long schedules.",
+      "Use tight gradient clipping, especially for KAN or token models.",
+      "Avoid very large KAN batches; moderate batches are safer."
+    ],
+    "loss": [
+      "Use manual shell weighting with b0 strongly downweighted and diffusion shells emphasized.",
+      "Avoid excessive highest-shell emphasis.",
+      "Use Huber/MSE mixtures with small Rician and no TV for voxelwise models."
+    ],
+    "boundary": [
+      "If shells are dense and well-conditioned, larger plain voxelwise MLPs may be sufficient without KAN.",
+      "Slicewise TV should remain zero or tiny; heavy TV harms parameter recovery."
+    ]
+  },
+  {
+    "physics": "NODDI",
+    "condition": "NODDI with single b0, b0 p99 equal to or near scanner maximum or strong b0 clipping, SNR about 35-55",
+    "model": [
+      "Voxelwise MLP or compact window/token slicewise models are safer than coordinate/hash-grid models.",
+      "Avoid unnecessarily large model expansion because clipping reduces useful intensity information."
+    ],
+    "data": [
+      "MPPCA denoising is important.",
+      "normalize_b0_median is often preferable when clipping/skew is evident.",
+      "Avoid noise augmentation that compounds clipped-signal artifacts."
+    ],
+    "training": [
+      "Use cosine_warmup or warmup_plateau with long warmup and tight clipping.",
+      "Use early stopping only with long patience."
+    ],
+    "loss": [
+      "Use mixed MSE+Huber with small Rician, not pure MSE.",
+      "Downweight b0 relative to diffusion shells when b0 clipping is strong.",
+      "Keep TV and coordinate penalties off unless using a compact slicewise attention model with tiny TV."
+    ],
+    "boundary": [
+      "If b0 distribution is not clipped and intensity scale is low, normalize_b0_mean may outperform median normalization.",
+      "Median normalization is not a substitute for denoising."
+    ]
+  },
+  {
+    "physics": "NODDI",
+    "condition": "Coarse NODDI with voxel size about 2.5 mm isotropic and SNR about 35, multi-shell data with at least b1000 and b2000",
+    "model": [
+      "Compact voxelwise KAN MLPs are useful for voxelwise fitting, especially when shell sampling is sparse.",
+      "Compact CSWin/window attention can be competitive for slicewise median-normalized data, but keep it memory-safe."
+    ],
+    "data": [
+      "Use MPPCA denoising.",
+      "Use no augmentation for voxelwise KAN; no or minimal augmentation for slicewise attention.",
+      "Choose normalize_b0_mean for KAN voxelwise settings; choose normalize_b0_median when slicewise high-dynamic-range attention models are used."
+    ],
+    "training": [
+      "Use AdamW with small learning rate, tight clipping, and long patience.",
+      "Use batches around 7k-12k for KAN voxelwise models under 35-40 GB memory rather than very large batches.",
+      "Use small slicewise batches for attention models."
+    ],
+    "loss": [
+      "Use manual shell weights that strongly emphasize b1000/b2000 and keep b0 low.",
+      "For 3-shell data, keep the highest shell moderate rather than dominant.",
+      "Use zero TV for voxelwise KAN; only tiny TV for slicewise attention."
+    ],
+    "boundary": [
+      "Fine-resolution 1.25 mm dense-shell NODDI may prefer larger plain MLPs instead of KAN.",
+      "KAN/token models become memory-risky if batch or width is scaled aggressively."
+    ]
+  },
+  {
+    "physics": "NODDI",
+    "condition": "NODDI with very high SNR >= 250, single-shell or limited-shell data, and 2.0 mm isotropic voxels",
+    "model": [
+      "Moderate voxelwise MLPs are strong; spatial CNNs can work but are not the default.",
+      "Avoid coordinate/hash-grid models with coordinate smoothness penalties."
+    ],
+    "data": [
+      "normalize_b0_mean is a safe default.",
+      "Denoising is less critical than in SNR <= 55 regimes, but normalization consistency remains important.",
+      "Use no augmentation for voxelwise training."
+    ],
+    "training": [
+      "Use AdamW with moderate learning rate and conservative clipping.",
+      "Long schedules are useful, but avoid over-large models that exploit high SNR by overfitting."
+    ],
+    "loss": [
+      "MSE with modest MAE/Huber is sufficient; Rician can be omitted or kept tiny.",
+      "Use manual shell weighting to emphasize diffusion shells more than b0.",
+      "Keep SSIM, TV, and coordinate penalties off."
+    ],
+    "boundary": [
+      "High SNR does not remove the need for denoising/robustness in clipped or sparse bvec data.",
+      "For multi-shell b3000 NODDI, use the multi-shell shell-weighting guidance instead."
+    ]
+  },
+  {
+    "physics": "DKI",
+    "condition": "Any DKI dataset with MPPCA-denoised multi-shell signals and no severe slice anisotropy, where b0 mean is stable and shell means decrease monotonically with b-value",
+    "model": [
+      "Avoid VAE/KL variants by default across spatial, token, and window families.",
+      "Prefer non-KAN standard token/window/spatial models unless voxelwise KAN has a clear memory-safe role."
+    ],
+    "data": [
+      "Keep augmentation light; denoising and shell balancing are more useful than synthetic noise.",
+      "Prefer slicewise or voxelwise representations over coordinate/hash-grid representations."
+    ],
+    "training": [
+      "Use AdamW rather than Adam for mature high-capacity configurations.",
+      "Prefer warmup_plateau for token/spatial DKI unless a tuned voxelwise MLP regime supports cosine_warmup."
+    ],
+    "loss": [
+      "Manual shell weighting is preferred over inverse-volume/default shell weighting.",
+      "Use only light TV and no coordinate finite-difference/bending penalties.",
+      "Use DKI constraint weights as a stabilizer, not as the dominant objective."
+    ],
+    "boundary": [
+      "Voxelwise coarse DKI can favor cosine_warmup and zero TV.",
+      "Very low SNR or low signal-scale scans may require larger DKI constraint weights than high-SNR token settings."
+    ]
+  },
+  {
+    "physics": "DTI",
+    "condition": "Any Cholesky-parameterized DTI dataset where the tensor is already positive definite by construction",
+    "model": [
+      "Do not add model complexity solely to enforce tensor positivity."
+    ],
+    "data": [
+      "Use denoising and normalization choices to stabilize signal fitting rather than extra positivity handling."
+    ],
+    "training": [
+      "Keep optimization focused on reconstruction stability with AdamW and clipping."
+    ],
+    "loss": [
+      "Set extra physics constraint weight to zero or near-zero by default.",
+      "Use reconstruction and light robust terms instead of redundant positive-definiteness penalties."
+    ],
+    "boundary": [
+      "This does not apply to DKI kurtosis validity constraints or NODDI parameter-range constraints.",
+      "If implementation-specific outputs can violate the Cholesky positivity transform, revisit this assumption."
+    ]
+  }
+]

@@ -1,0 +1,13 @@
+api:
+  provider: openai
+  base_url: https://api.openai.com/v1
+  model_name: REPLACE_WITH_MODEL_NAME
+
+data_dir: data/CHCP/sub-001/diff-1-6-0
+field_strength: 3.0
+scanner_vendor: Siemens
+output_dir: results/chcp-sub001-dti
+
+mrtrix3_bin: /path/to/mrtrix3/bin
+gpu_id: 0
+gpu_memory_limit_mib: 40000

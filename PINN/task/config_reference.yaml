@@ -1,0 +1,359 @@
+# ==========================================
+# PINN MRI Inversion System - Global Configuration Reference
+# ==========================================
+# This file contains all supported hyperparameters and their descriptions, 
+# for the LLM agent to reference when reasoning, tuning, and designing ablation studies.
+# In actual usage, only keep the required fields; omitted fields will fall back to default values in the code.
+#
+# PINN Workflow Assembly Logic:
+# 1. Data Input (dataio): Determines model's "field of view" scale (voxelwise, 3Dcoord, slicewise, patchwise).
+# 2. Network (models): The core brain. model.name selects the model family/file:
+#    voxelwise, coords, spatial, token, window_attention, or operator.
+#    For encoder+decoder families, model.<family>.encoder.type selects the concrete encoder.
+# 3. Physics (physics): Replaces traditional label output. Maps physical parameters into predicted MRI observation signals via immutable physical equations. (No config needed).
+# 4. Losses (losses): Double constraint:
+#    * Data consistency: Approximates real MRI signals (MSE / MAE / Huber).
+#    * Physical regularization: Enforces physical reality constraints on predicted parameter maps (TV for spatial tensors; CoordGradL2/CoordBending for coordinate networks).
+
+env:
+  seed: 42
+  device: "cuda"          # "cuda" | "cpu"
+  gpu_id: "0"             # CUDA_VISIBLE_DEVICES
+  gpu_memory_limit_mib: 40000 # Optional per-process PyTorch CUDA memory limit.
+  gpu_reserve_cache: true # Pre-reserve this process's CUDA allocator cache to protect its memory slice.
+  preload_gpu: true       # Keep data on GPU. extract_block_torch_vec slices directly on GPU.
+
+data:
+  # --- Dataset Path (Required) ---
+  data_dir: "data/diff-1-15-0-0"  # Specify the path to the underlying dataset folder for the current experiment.
+  val_split: 0.2          # Validation set ratio
+  batch_size: 8           # Number of samples per training iteration. Too large may OOM, too small may cause instability.
+  num_workers: 4          # Number of subprocesses for data loading. 0 means main process. Usually 2-4 per CPU core.
+  pin_memory: true        # Whether to load data into pinned memory to accelerate GPU transfer.
+  drop_last: false        # Whether to drop the last incomplete batch during training.
+
+  # --- Core Field of View Mode (Required) ---
+  # Choices: voxelwise (single voxel signal input), coords (INR on full-brain 3D coordinates), slicewise (2D slice, faster), patchwise (3D block, fewer inter-slice artifacts)
+  dataset: "slicewise" 
+  
+  # Data Preprocessing Strategy
+  preprocess: "normalize_b0_mean"  # Options:
+                                   # "normalize_none" (no preprocessing)
+                                   # "normalize_b0_mean" (divide all signals by the mean of b0, common normalization)
+                                   # "normalize_b0_median" (divide all signals by the median of b0)
+                                   # "normalize_max" (divide all signals by the max value of the volume)
+                                   # These preprocessing methods do not break physical relationships.
+                                   # The same preprocessing will be automatically applied during inference.
+                                   
+  denoise:                  # Denoising strategy. Run offline before training.
+    name: "MPPCA"           # Denoising method. Options: MPPCA, BM4D, none
+                            # MPPCA     — The MPPCA algorithm employs random matrix theory to identify and suppress noise components by analyzing the eigenvalue spectrum of local signal patches.
+                            # BM4D      — 3D Block-Matching filter. Estimates noise PSD from slice FFTs automatically. Denoise by each gradient volume separately.
+
+  # --- Auxiliary Parameters (Effective based on dataset type) ---
+  patch_size: 64             # (Only for patchwise) 3D data block size
+  sz_pad: 4                  # (Only for patchwise) Boundary overlap size. Larger reduces block artifacts but increases patches and time.
+  orientation: "axial"       # (Only for slicewise) Slice orientation: axial / coronal / sagittal.
+  
+  # Spatial Morphological Data Augmentation Strategy
+  augment:  # "name" is the augmentation type, "p" is the probability, "std_ratio" is the noise intensity parameter. Applying spatial augmentation to the input image does not change the gradient relationship between different volumes. Thus, the gradient direction matrix g (bvec) does not need synchronous geometric changes.
+    - {name: flip_x, p: 0.5}                 # X-axis flip. Usually the only one used (Only for patchwise / slicewise)
+    - {name: flip_y, p: 0.5}                 # Y-axis flip (Only for patchwise / slicewise)
+    - {name: flip_z, p: 0.5}                 # Z-axis flip. Invalid in slicewise mode.
+    - {name: rot90, p: 0.5}                  # 90-degree rotation (Only for patchwise)
+    - {name: rot180, p: 0.5}                 # 180-degree rotation (Only for slicewise / patchwise)
+    - {name: noise, p: 0.3, std_ratio: 0.05} # Add Gaussian noise. std_ratio is the standard deviation ratio relative to the b0 signal.
+
+model:
+  # --- Core Network Architecture Control ---
+  # name selects the family/file. Options: voxelwise, coords, spatial, token, window_attention, operator.
+  # For encoder+decoder families, encoder.type selects the concrete encoder in that family.
+  name: "spatial"
+
+  voxelwise:
+    # Strict constraint: only use with data.dataset: voxelwise.
+    hidden: 128
+    num_layers: 3
+    mlp_neck: 64
+    mlp_dropout: 0.0
+    use_KAN: false
+
+  coords:
+    # Strict constraint: only use with data.dataset: coords or 3Dcoord.
+    # Point encoder + optional Gaussian bottleneck + coordinate MLP decoder.
+    use_VAE: false           # Usually leave false; loss.KL.weight > 0 turns this on automatically.
+    encoder:
+      # mode can be a string or a list of encoder specs.
+      # Options: none, positional_encoding, gaussian_fourier, siren_first_layer,
+      # xy_yz_xz, xyz_plus_xy_yz_xz, dense_grid, multi_res_grid, hash_grid, tri_plane.
+      mode: "hash_grid"
+      # Example concat:
+      # mode:
+      #   - {mode: gaussian_fourier, mapping_size: 128, scale: 10.0}
+      #   - {mode: tri_plane, resolution: 64, features_per_plane: 8}
+      num_frequencies: 8
+      max_frequency: 64.0
+      include_input: true
+      mapping_size: 128
+      scale: 10.0
+      out_dim: 256
+      omega0: 30.0
+      resolution: 64
+      features: 8
+      resolutions: [16, 32, 64]
+      n_levels: 16
+      n_features_per_level: 2
+      log2_hashmap_size: 19
+      base_resolution: 16
+      per_level_scale: 1.5
+      features_per_plane: 8
+    decoder:
+      activation: "relu"     # Options: relu, softplus, silu, gelu, sine, leakyrelu.
+      residual: false
+      hidden: 256
+      num_layers: 4
+      dropout: 0.0
+      use_KAN: false
+      omega: 30.0
+      output_init_std: 0.01
+
+  spatial:
+    # Strict constraint: only use with data.dataset: slicewise or patchwise.
+    # Grid encoder + optional Gaussian bottleneck + per-voxel MLP decoder.
+    use_KAN: false
+    use_VAE: false           # loss.KL.weight > 0 turns this on automatically.
+    encoder:
+      type: "CNN"            # Options: CNN, UNet.
+      # CNN fields:
+      enc_ch: 32
+      enc_layers: 1
+      # UNet fields:
+      hidden: 64
+      num_layers: 3
+      use_gn: false
+      # Shared CNN/UNet fields:
+      residual: false
+      dilation: 1
+      stride: 1
+      attention:
+        enabled: true
+        reduction: 16
+        kernel_size: 7
+        use_channel_attn: true
+        use_spatial_attn: true
+    decoder:
+      hidden: 256
+      num_layers: 5
+      neck: 64
+      dropout: 0.0
+
+  token:
+    # Strict constraint: only use with data.dataset: slicewise or patchwise.
+    # Conv stem -> token sequence encoder -> per-voxel MLP decoder.
+    use_KAN: false
+    use_VAE: false
+    encoder:
+      type: "Mamba"          # Options: Mamba, RNN, LSTM, Transformer.
+      enc_ch: 64
+      depth: 4
+      dropout: 0.0
+      scan_mode: "bidirectional" # Options: flatten, bidirectional, axial.
+      stem_layers: 1
+      # Mamba-only fields:
+      d_state: 16
+      d_conv: 4
+      expand: 2
+      variant: "mamba"       # Options: mamba, mamba2.
+      headdim: 16
+      # Transformer-only fields:
+      nhead: 4
+      dim_feedforward: 256
+    decoder:
+      hidden: 256
+      num_layers: 5
+      neck: 64
+      dropout: 0.0
+
+  window_attention:
+    # Strict constraint: only use with data.dataset: slicewise or patchwise.
+    # Conv stem -> local/sparse window attention encoder -> per-voxel MLP decoder.
+    use_KAN: false
+    use_VAE: false
+    encoder:
+      type: "Swin"           # Options: Swin, MaxViT, CSWin, Twins, FocalTransformer.
+      enc_ch: 64
+      depth: 2
+      nhead: 4
+      mlp_ratio: 4.0
+      dropout: 0.0
+      stem_layers: 1
+      # Swin/Twins/FocalTransformer:
+      window_size: 4
+      # MaxViT:
+      block_size: 4
+      grid_size: 4
+      # CSWin:
+      stripe_size: 4
+      # Twins:
+      sample_stride: 4
+      # FocalTransformer:
+      focal_stride: 2
+    decoder:
+      hidden: 256
+      num_layers: 5
+      neck: 64
+      dropout: 0.0
+
+  operator:
+    # Strict constraint: only use with data.dataset: slicewise or patchwise.
+    # Conv stem -> spectral/operator encoder -> per-voxel MLP decoder.
+    use_KAN: false
+    use_VAE: false
+    encoder:
+      type: "FNO"            # Options: FNO, AFNO, UFNO, UNO.
+      enc_ch: 64
+      depth: 4
+      dropout: 0.0
+      stem_layers: 1
+      # FNO/UFNO/UNO:
+      modes: 12
+      # AFNO:
+      num_blocks: 8
+      sparsity_threshold: 0.01
+      hard_thresholding_fraction: 1.0
+    decoder:
+      hidden: 256
+      num_layers: 5
+      neck: 64
+      dropout: 0.0
+
+training:
+  epochs: 500                # Total number of training epochs
+  lr: 0.001                  # Initial main learning rate
+  log_every: 1               # Print training log every N epochs
+  ckpt_every: 1              # Save model checkpoint every N epochs
+  grad_clip: 1.0             # Gradient clipping threshold to prevent exploding gradients
+  resume:
+    enabled: true            # Kept for compatibility; runtime always treats resume as enabled
+    path: ""                 # Optional explicit checkpoint path. Empty means auto-detect latest_model.pth, then best_model.pth
+    strict: true             # Enforce exact model key matching when loading weights
+    restore_rng_state: true  # Restore Python/Torch/CUDA RNG states for closer continuation
+
+  optimizer: 
+    name: "adam"             # Optimizer type, typically adam. Options: adam, adamw, sgd
+    adam:
+      weight_decay: 0.0      # Weight decay parameter for Adam
+    adamw:
+      weight_decay: 0.01     # Weight decay parameter for AdamW, increases regularization
+    sgd:
+      momentum: 0.9          # Momentum parameter for SGD
+      weight_decay: 0.0      # Weight decay parameter for SGD
+  
+  # --- Learning Rate Scheduler Configuration ---
+  # The 6 supported LR decay strategies are listed below. (Activate only ONE)
+  # An appropriate strategy prevents local optima and smooths loss convergence.
+  scheduler:
+    name: "plateau"          # Scheduler type. Options: plateau, cosine_warmup, step, cosine, exponential, cosine_warm_restart, warmup_plateau
+    plateau:                 # Adaptive decay based on val_loss monitoring.
+                             # True "act according to circumstances" strategy. Best for PINN with complex physical/data multi-loss conflicts to avoid early dead-ends.
+      mode: "min"            # Optimization direction of monitored metric, usually "min" (e.g., val loss)
+      factor: 0.5            # Factor by which the learning rate will be reduced
+      patience: 10           # Number of epochs with no improvement after which learning rate will be reduced
+      min_lr: 1e-6           # Lower bound on the learning rate
+    
+    cosine_warmup:           # Cosine annealing with linear warmup.
+                             # Useful for spatial/token/window_attention/operator families where early spatial-mixing gradients can be unstable.
+      warmup_epochs: 10      # Number of epochs for linear warmup
+      T_max: 500             # Total training epochs (or max epochs for the cosine cycle)
+      eta_min: 0.0           # Minimum learning rate
+      last_epoch: -1         # The index of last epoch, -1 means start from scratch
+
+    cosine_warm_restart:     
+      T_0: 50                # First restart cycle
+      T_mult: 2              # Factor increases cycle after each restart
+      eta_min: 1e-6          # Minimum learning rate
+      warmup_epochs: 10      # Optional warmup
+  
+    step:                    # Periodic step decay.
+                             # Suitable for tasks where the convergence curve easily shows clear step-like dropping patterns.
+      step_size: 25          # Period size for decay
+      gamma: 0.25            # Multiplicative factor of learning rate decay
+  
+    cosine:                  # Pure cosine annealing.
+                             # Suitable for late-stage finetuning, gives excellent smooth convergence without complex rule dialing.
+      T_max: 500             # Total duration of cosine annealing
+      eta_min: 0.0           # Minimum learning rate
+
+    exponential:             # Daily exponential smooth decay.
+                             # Suitable for extremely conservative decline needs. 
+      gamma: 0.95            # Multiplicative factor per epoch
+
+    warmup_plateau:          # Linear warmup for stable start, then adaptive plateau decay.
+                             # Best of both worlds: avoids early instability (warmup) + adapts to loss plateau (plateau).
+      warmup_epochs: 10      # Number of epochs for linear warmup before plateau takes over
+      mode: "min"            # Optimization direction, usually "min" (val loss)
+      factor: 0.5            # Factor by which lr is reduced on plateau
+      patience: 10           # Epochs with no improvement before reducing lr
+      min_lr: 1e-6           # Lower bound on the learning rate
+      eta_min: 0.0           # Starting lr during warmup (linearly rises to base lr)
+
+  early_stopping:
+    enabled: true            # Whether to enable early stopping
+    patience: 40             # Epochs to wait for improvement before stopping
+    min_delta: 1.0e-6        # Minimum change required to qualify as improvement
+
+  # --- Loss Function & Physical Regularization ---
+loss:
+  # Guide the network's signal reconstruction capability - Data Consistency
+  # (Must approximate the real observed MRI signals)
+  data_consistency:          # all calculated within mask
+    # Shell weighting: apply per-direction weights based on b-value or signal intensity.
+    # Shells are identified by unique bval values (already rounded). Weights are normalized to mean=1.
+    # Options:
+    #   "none"           — all directions weighted equally (default)
+    #   "inv_bval"       — weight = 1/bval (b0 gets weight 1); high b-value shells contribute less
+    #   "inv_log_bval"   — weight = 1/log(bval); high b-value shells contribute less
+    #   "inv_sqrt_bval"  — weight = 1/sqrt(bval); high b-value shells contribute less
+    #   "inv_signal"     — weight = 1/shell_mean_signal; low-signal shells contribute less
+    #   "inv_volume_num" — weight = 1/num_directions_in_shell; shells with more volumes contribute less per direction
+    #   "manual"         — specify weights explicitly per shell, ordered by bval ascending
+    shell_weighting: "none"
+    shell_weights: [1.0, 0.8, 0.5, 0.3]  # only used when shell_weighting: "manual"
+    MSE:
+      weight: 1.0            # Can be reduced when using a prior-dominant diagnostic/fallback run on a weakly constrained inverse problem.
+    MAE:
+      weight: 0.0
+    Huber:
+      weight: 0.0
+      beta: 1.0              # Huber transition point
+    SSIM:
+      weight: 0.05           # Structural Similarity loss weight, helps preserve image texture and structure
+    Rician:
+      weight: 1.0            # Rician noise model loss, helps account for MRI magnitude noise distribution
+      s_noise: "auto"        # Noise std in the normalized signal domain. "auto" uses 1/SNR from *_features.json; set a numeric value to override.
+
+  KL:
+    weight: 0.0              # KL regularization weight. Set >0 to automatically enable the shared Gaussian bottleneck in coords/spatial/token/window_attention/operator.
+    beta: 1.0                # Optional multiplier for the raw KL term.
+    
+  # Guide the spatial rationality of physical parameters - Spatial Smoothing
+  parameter_map:
+    TV:
+      weight: 0.1            # Total Variation spatial smoothness weight for slicewise/patchwise tensors. Skipped for voxelwise/3Dcoord.
+    CoordGradL2:
+      weight: 0.0            # Coordinate-network autograd smoothness: penalizes ||d params / d coords||^2. Use for Fourier/SIREN-style encoders, not hash_grid.
+      normalize: true        # Normalize each output channel before computing derivative magnitude.
+      weights: []            # Optional per-parameter channel weights. Leave empty/null to weight all channels equally.
+    CoordFiniteDiffL2:
+      weight: 0.0            # Coordinate-network finite-difference smoothness. Recommended for hash_grid because tiny-cuda-nn does not support double backward.
+      eps: 0.005             # Coordinate step in normalized [0,1] space. Larger is smoother but less local.
+      normalize: true
+      weights: []
+    CoordBending:
+      weight: 0.0            # Coordinate-network bending energy: penalizes second derivatives. More expensive; better suited to Fourier/SIREN-style encoders than hash_grid.
+      normalize: true
+      weights: []
+      
+physics:
+  name: "DTI"                # DTI, DKI and NODDI
+  constrain_weight: 1000     # Constraint penalty weight: penalizes non-positive-definite kurtosis in DKI fitting to keep the estimate physically meaningful; larger values suppress non-PD solutions more strongly.

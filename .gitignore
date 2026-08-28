@@ -1,0 +1,51 @@
+# Credentials and local configuration
+.env
+.env.*
+env_config.yaml
+agent/api.json
+agent/api_all.json
+*.local.json
+*.local.yaml
+*.local.yml
+
+# Python, editors, and local automation
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.DS_Store
+.idea/
+.vscode/
+.claude/
+.codex/
+
+# Build and runtime output
+build/
+dist/
+experiments/
+outputs/
+runs/
+checkpoints/
+*.log
+*.pid
+
+# Data and model artifacts
+*.nii
+*.nii.gz
+*.mif
+*.mat
+*.h5
+*.hdf5
+*.pkl
+*.pickle
+*.npy
+*.npz
+*.pth
+*.pt
+*.ckpt
+*.safetensors
+*.bin
