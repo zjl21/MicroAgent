@@ -22,7 +22,7 @@ prepared DWI -> feature extraction -> Agent config generation with skills
 ### 1. Clone the repository
 
 ```bash
-git clone REPLACE_WITH_REPOSITORY_URL MicroAgent
+git clone https://github.com/zjl21/MicroAgent.git MicroAgent
 cd MicroAgent
 ```
 
