@@ -1,11 +1,11 @@
 # ==========================================
-# PINN MRI Inversion System - Global Configuration Reference
+# Microstructure Quantification System - Global Configuration Reference
 # ==========================================
 # This file contains all supported hyperparameters and their descriptions, 
 # for the LLM agent to reference when reasoning, tuning, and designing ablation studies.
 # In actual usage, only keep the required fields; omitted fields will fall back to default values in the code.
 #
-# PINN Workflow Assembly Logic:
+# Quantification Workflow Assembly Logic:
 # 1. Data Input (dataio): Determines model's "field of view" scale (voxelwise, 3Dcoord, slicewise, patchwise).
 # 2. Network (models): The core brain. model.name selects the model family/file:
 #    voxelwise, coords, spatial, token, window_attention, or operator.
@@ -255,7 +255,7 @@ training:
   scheduler:
     name: "plateau"          # Scheduler type. Options: plateau, cosine_warmup, step, cosine, exponential, cosine_warm_restart, warmup_plateau
     plateau:                 # Adaptive decay based on val_loss monitoring.
-                             # True "act according to circumstances" strategy. Best for PINN with complex physical/data multi-loss conflicts to avoid early dead-ends.
+                             # True "act according to circumstances" strategy. Best for quantification with complex physical/data multi-loss conflicts to avoid early dead-ends.
       mode: "min"            # Optimization direction of monitored metric, usually "min" (e.g., val loss)
       factor: 0.5            # Factor by which the learning rate will be reduced
       patience: 10           # Number of epochs with no improvement after which learning rate will be reduced

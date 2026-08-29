@@ -10,7 +10,7 @@ PROJECT_ROOT_ENV = "MICROAGENT_ROOT"
 def _looks_like_project_root(path: str) -> bool:
     return (
         os.path.exists(os.path.join(path, "agent.py"))
-        and os.path.isdir(os.path.join(path, "PINN"))
+        and os.path.isdir(os.path.join(path, "quantification"))
         and os.path.isdir(os.path.join(path, "toolbox"))
     )
 

@@ -143,7 +143,7 @@ def _existing_feature_path(data_dir: str | os.PathLike) -> Path | None:
 
 def _build_training_config(config: dict, run_dir: Path) -> Path:
     set_project_root(str(PROJECT_ROOT))
-    os.environ.setdefault("AGENT_LIBRARY", "PINN")
+    os.environ.setdefault("AGENT_LIBRARY", "quantification")
     from agent.runtime import configure_library_path, task_prompt
 
     configure_library_path()
@@ -212,7 +212,7 @@ def main() -> None:
     mrtrix_bin = Path(config["mrtrix3_bin"])
     os.environ["MRTRIX3_BIN"] = str(mrtrix_bin)
     os.environ["PATH"] = os.pathsep.join([str(mrtrix_bin), os.environ.get("PATH", "")])
-    os.environ.setdefault("AGENT_LIBRARY", "PINN")
+    os.environ.setdefault("AGENT_LIBRARY", "quantification")
 
     feature_path = _existing_feature_path(config["data_dir"])
     if feature_path is None:

@@ -4,7 +4,7 @@ import sys
 from functools import lru_cache
 
 
-DEFAULT_LIBRARY = "PINN"
+DEFAULT_LIBRARY = "quantification"
 LIBRARY_ENV = "AGENT_LIBRARY"
 
 
@@ -36,7 +36,7 @@ def configure_library_path() -> str:
     """Add the selected task library folder to sys.path.
 
     After this, imports such as `from library...` and `import task.task`
-    resolve inside the active task library, e.g. `<repo>/PINN/library`.
+    resolve inside the active task library, e.g. `<repo>/quantification/library`.
     """
     root = library_root()
     if not os.path.isdir(root):

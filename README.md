@@ -104,7 +104,7 @@ The second command automatically extracts `sub-001_features.json`, applies skill
 
 If a run is interrupted, execute the same command again. Training resumes from the checkpoint in the configured output directory; a completed checkpoint is reused for inference.
 
-### 3. Run the demo with another prepared DWI
+### 3. Run the DTI demo with another prepared DWI
 
 Place exactly one set of the following six files in one directory, give them a common prefix such as `sub-001`, and change `data_dir` in `env_config.yaml`:
 
@@ -117,4 +117,7 @@ Place exactly one set of the following six files in one directory, give them a c
 | `<prefix>_weight_mask.nii.gz` | 3-D diffusion-space mask defining the voxels used for signal normalization, training/validation, and final parameter-map inference. For the DTI workflow, use a brain-tissue mask that excludes CSF. |
 | `<prefix>_evaluate_mask_WM.nii.gz` | 3-D diffusion-space white-matter mask used  to calculate WM versus non-WM tissue signal features for Agent configuration retrieval. |
 
-## Citation
+## Implementation details
+
+- [Configuration search space](quantification/task/config_reference.yaml)
+- [Reward calculation](quantification/reward/reward.py)

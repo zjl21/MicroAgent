@@ -38,7 +38,7 @@ There are issues with the gradients in this training run. The system has complet
 - Modification suggestions: Adjust the loss function weights to make the gradient signal stronger, change the activation function (e.g., ReLU → LeakyReLU), or check the normalization method of input features.
 
 ### Gradient Imbalance Between Physics Layer and Backbone Network
-- Compare the gradient norm of the physics penalty layer (the layer corresponding to the PINN loss) with the backbone network (MLP/CNN backbone).
+- Compare the gradient norm of the physics penalty layer (the layer corresponding to the physics-based loss) with the backbone network (MLP/CNN backbone).
 - If the difference is more than two orders of magnitude: It indicates that the multi-task weight allocation is unreasonable, and the gradient is dominated by one term. It is recommended to adjust the weight ratio of each loss component so that the gradient magnitudes of both parts are comparable.
 
 ---"""

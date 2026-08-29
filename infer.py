@@ -34,7 +34,7 @@ from agent.tools.gpu_holder import GPUHolder
 # ---------------------------------------------------------------------------
 
 def main():
-    parser = argparse.ArgumentParser(description="PINN 推理入口")
+    parser = argparse.ArgumentParser(description="微结构定量推理入口")
     parser.add_argument(
         "--config", default="experiments/exp-slice/config.yaml",
         help="config path",
